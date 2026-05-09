@@ -83,9 +83,8 @@
             const [authError, setAuthError] = useState('');
             const [vaultName, setVaultName] = useState('PepVault');
             const [searchTerm, setSearchTerm] = useState('');
-            const [targetDose, setTargetDose] = useState(250); // Default dose in mcg
             
-            const [formData, setFormData] = useState({ name: '', mg: '', bac: '', expDate: '' });
+            const [formData, setFormData] = useState({ name: '', mg: '', bac: '', expDate: '', targetDose: 250 });
 
             useEffect(() => {
                 const unsubscribe = auth.onAuthStateChanged((u) => {
@@ -134,10 +133,18 @@
                     ...formData,
                     mg: parseFloat(formData.mg),
                     bac: parseFloat(formData.bac) || 0,
+                    targetDose: parseFloat(formData.targetDose) || 250,
                     createdAt: firebase.firestore.FieldValue.serverTimestamp()
                 });
-                setFormData({ name: '', mg: '', bac: '', expDate: '' });
+                setFormData({ name: '', mg: '', bac: '', expDate: '', targetDose: 250 });
                 setActiveTab('inventory');
+            };
+
+            const updateVialDose = async (id, newDose) => {
+                const doseValue = parseFloat(newDose) || 0;
+                await db.collection('users').doc(user.uid).collection('vials').doc(id).update({
+                    targetDose: doseValue
+                });
             };
 
             const deleteVial = async (id) => {
@@ -252,6 +259,10 @@
                                     </div>
                                 </div>
                                 <div className="space-y-1">
+                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-2">Target Dose (mcg)</label>
+                                    <input type="number" step="1" placeholder="250" className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none" value={formData.targetDose} onChange={e => setFormData({...formData, targetDose: e.target.value})} />
+                                </div>
+                                <div className="space-y-1">
                                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-2">Recon / Exp Date</label>
                                     <input type="date" className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none" value={formData.expDate} onChange={e => setFormData({...formData, expDate: e.target.value})} />
                                 </div>
@@ -259,33 +270,10 @@
                             </form>
                         ) : (
                             <div className="space-y-6">
-                                {/* Search and Dose Calculator Header */}
-                                <div className="space-y-4">
-                                    <div className="relative group">
-                                        <Icon name="search" size={20} className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-blue-500 transition-colors" />
-                                        <input type="text" placeholder="Search Vault..." className="w-full pl-14 pr-8 py-5 bg-white border border-slate-200 rounded-[2.5rem] shadow-sm outline-none focus:ring-4 focus:ring-blue-50 font-bold transition-all" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
-                                    </div>
-
-                                    {/* Global Target Dose Input */}
-                                    <div className="bg-blue-600 p-6 rounded-[2rem] shadow-xl shadow-blue-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                                        <div className="flex items-center gap-3">
-                                            <div className="bg-white/20 p-2 rounded-xl">
-                                                <Icon name="activity" size={20} className="text-white" />
-                                            </div>
-                                            <div>
-                                                <p className="text-[10px] font-black text-blue-100 uppercase tracking-widest leading-none">Dose Calculator</p>
-                                                <h2 className="text-white font-black text-lg tracking-tighter uppercase leading-none mt-1">Desired Dose (mcg)</h2>
-                                            </div>
-                                        </div>
-                                        <div className="relative">
-                                            <input 
-                                                type="number" 
-                                                className="w-full md:w-32 p-3 bg-white/10 border-2 border-white/20 rounded-xl text-white font-black outline-none focus:bg-white/20 focus:border-white/40 transition-all text-center"
-                                                value={targetDose}
-                                                onChange={e => setTargetDose(parseFloat(e.target.value) || 0)}
-                                            />
-                                        </div>
-                                    </div>
+                                {/* Search Header */}
+                                <div className="relative group">
+                                    <Icon name="search" size={20} className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-blue-500 transition-colors" />
+                                    <input type="text" placeholder="Search Vault..." className="w-full pl-14 pr-8 py-5 bg-white border border-slate-200 rounded-[2.5rem] shadow-sm outline-none focus:ring-4 focus:ring-blue-50 font-bold transition-all" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
                                 </div>
 
                                 {vials.filter(v => v.name.toLowerCase().includes(searchTerm.toLowerCase())).length === 0 ? (
@@ -296,8 +284,9 @@
                                 ) : (
                                     vials.filter(v => v.name.toLowerCase().includes(searchTerm.toLowerCase())).map(vial => {
                                         const concentrationMgMl = vial.bac > 0 ? (vial.mg / vial.bac) : 0;
-                                        const mcgPerUnit = concentrationMgMl * 10; // 1ml = 100u, so 1u = 0.01ml. mcg/u = (mg/ml * 1000) / 100 = mg/ml * 10
-                                        const unitsNeeded = (concentrationMgMl > 0 && targetDose > 0) ? (targetDose / mcgPerUnit).toFixed(1) : 0;
+                                        const mcgPerUnit = concentrationMgMl * 10; 
+                                        const currentDose = vial.targetDose || 0;
+                                        const unitsNeeded = (mcgPerUnit > 0 && currentDose > 0) ? (currentDose / mcgPerUnit).toFixed(1) : 0;
 
                                         return (
                                             <div key={vial.id} className="bg-white p-7 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-4 animate-fade-in hover:shadow-md transition-shadow relative overflow-hidden group">
@@ -313,18 +302,30 @@
                                                 </div>
 
                                                 {vial.bac > 0 ? (
-                                                    <div className="bg-slate-50 p-5 rounded-[1.5rem] flex items-center gap-4 text-xs font-bold text-slate-600 border border-slate-100 shadow-inner group/guide transition-all">
-                                                        <div className="bg-white p-2 rounded-xl shadow-sm border border-slate-50 group-hover/guide:scale-110 transition-transform">
-                                                            <Icon name="info" size={18} className="text-blue-500" />
+                                                    <div className="bg-slate-50 p-5 rounded-[1.5rem] border border-slate-100 shadow-inner space-y-4">
+                                                        <div className="flex items-center justify-between gap-4">
+                                                            <div className="flex items-center gap-2">
+                                                                <div className="bg-white p-1.5 rounded-lg shadow-sm">
+                                                                    <Icon name="activity" size={14} className="text-blue-600" />
+                                                                </div>
+                                                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Desired Dose (mcg)</p>
+                                                            </div>
+                                                            <input 
+                                                                type="number"
+                                                                className="w-24 p-2 bg-white border border-slate-200 rounded-xl text-center font-black text-slate-800 outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                                                                value={vial.targetDose || 0}
+                                                                onChange={(e) => updateVialDose(vial.id, e.target.value)}
+                                                            />
                                                         </div>
-                                                        <div className="flex-1">
-                                                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Syringe Guide</p>
-                                                            <div className="flex items-center justify-between">
+
+                                                        <div className="flex items-center gap-4 text-xs font-bold text-slate-600 pt-3 border-t border-slate-200/50">
+                                                            <div className="bg-white p-2 rounded-xl shadow-sm">
+                                                                <Icon name="info" size={18} className="text-blue-500" />
+                                                            </div>
+                                                            <div className="flex-1 flex items-center justify-between">
+                                                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Syringe Draw</p>
                                                                 <p className="text-slate-800 font-black tracking-tight text-sm">
-                                                                    Dose: <span className="text-blue-600">{targetDose}mcg</span>
-                                                                </p>
-                                                                <p className="text-slate-800 font-black tracking-tight text-sm">
-                                                                    Draw: <span className="text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-lg">{unitsNeeded} Units</span>
+                                                                    <span className="text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-lg">{unitsNeeded} Units</span>
                                                                 </p>
                                                             </div>
                                                         </div>
