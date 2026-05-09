@@ -166,8 +166,28 @@
                             <h1 className="text-5xl font-bold text-slate-900 leading-none brand-font">PepVault</h1>
                         </div>
                         <form onSubmit={handleAuth} className="space-y-4">
-                            <input type="email" placeholder="Email" className="w-full p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500 font-bold" value={email} onChange={e => setEmail(e.target.value)} required />
-                            <input type="password" placeholder="Password" className="w-full p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500 font-bold" value={password} onChange={e => setPassword(e.target.value)} required />
+                            <input 
+                                type="email" 
+                                name="email"
+                                id="email"
+                                autoComplete="username email"
+                                placeholder="Email" 
+                                className="w-full p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500 font-bold" 
+                                value={email} 
+                                onChange={e => setEmail(e.target.value)} 
+                                required 
+                            />
+                            <input 
+                                type="password" 
+                                name="password"
+                                id="password"
+                                autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
+                                placeholder="Password" 
+                                className="w-full p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500 font-bold" 
+                                value={password} 
+                                onChange={e => setPassword(e.target.value)} 
+                                required 
+                            />
                             {authError && <p className="text-red-500 text-xs font-bold px-2">{authError}</p>}
                             <button className="w-full bg-blue-600 text-white font-black py-5 rounded-2xl shadow-lg uppercase tracking-widest text-xs active:scale-95 transition-transform">
                                 {authMode === 'login' ? 'Open Vault' : 'Create Vault'}
@@ -260,7 +280,7 @@
                                                             {concentration && <span className="bg-emerald-50 text-emerald-700 px-3 py-1 rounded-lg text-[9px] font-black border border-emerald-100 uppercase tracking-widest">{concentration} MG/ML</span>}
                                                         </div>
                                                     </div>
-                                                    <button onClick={() => deleteVial(vial.id)} className="text-slate-200 hover:text-red-500 p-2 transition-colors"><Icon name="trash-2" size={20} /></button>
+                                                    <button onClick={() => deleteVial(id)} className="text-slate-200 hover:text-red-500 p-2 transition-colors"><Icon name="trash-2" size={20} /></button>
                                                 </div>
                                                 {concentration && (
                                                     <div className="bg-slate-50 p-4 rounded-2xl flex items-center gap-3 text-[10px] font-bold text-slate-600 border border-slate-100 shadow-inner">
