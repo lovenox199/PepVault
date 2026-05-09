@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Peptide Vault Pro</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Shadows+Into+Light+Two&family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+    
+    <!-- React & Babel for Browser Rendering -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- Firebase Compat (Easier for single-file browser scripts) -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .brand-font { font-family: 'Shadows Into Light Two', cursive; }
+        
+        /* Smooth transitions */
+        .fade-enter { opacity: 0; transform: translateY(10px); }
+        .fade-enter-active { opacity: 1; transform: translateY(0); transition: all 300ms; }
+        
+        /* Hide scrollbars */
+        ::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body class="bg-slate-50">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        // --- FIREBASE CONFIGURATION ---
+        // REPLACE THIS with your actual Firebase config from the Firebase Console
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_PROJECT.firebaseapp.com",
+            projectId: "YOUR_PROJECT_ID",
+            storageBucket: "YOUR_PROJECT.appspot.com",
+            messagingSenderId: "YOUR_ID",
+            appId: "YOUR_APP_ID"
+        };
+
+        // Initialize Firebase
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+
+        // Helper Component for Lucide Icons
+        const Icon = ({ name, size = 24, className = "" }) => {
+            useEffect(() => {
+                lucide.createIcons();
+            }, [name]);
+            return <i data-lucide={name} style={{ width: size, height: size }} className={className}></i>;
+        };
+
+        function App() {
+            const [user, setUser] = useState(null);
+            const [loading, setLoading] = useState(true);
+            const [vials, setVials] = useState([]);
+            const [activeTab, setActiveTab] = useState('inventory');
+            const [authMode, setAuthMode] = useState('login');
+            const [email, setEmail] = useState('');
+            const [password, setPassword] = useState('');
+            const [authError, setAuthError] = useState('');
+            const [vaultName, setVaultName] = useState('PepVault');
+            const [searchTerm, setSearchTerm] = useState('');
+            
+            const [formData, setFormData] = useState({ name: '', mg: '', bac: '', expDate: '' });
+
+            useEffect(() => {
+                const unsubscribe = auth.onAuthStateChanged((u) => {
+                    setUser(u);
+                    setLoading(false);
+                });
+                return unsubscribe;
+            }, []);
+
+            useEffect(() => {
+                if (!user) return;
+                
+                // Load Profile
+                db.collection('users').doc(user.uid).collection('settings').doc('profile').get()
+                    .then(doc => { if (doc.exists) setVaultName(doc.data().vaultName || 'PepVault'); });
+
+                // Load Vials
+                const unsubscribe = db.collection('users').doc(user.uid).collection('vials')
+                    .orderBy('createdAt', 'desc')
+                    .onSnapshot(snapshot => {
+                        const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                        setVials(data);
+                    });
+                return unsubscribe;
+            }, [user]);
+
+            const handleAuth = async (e) => {
+                e.preventDefault();
+                setAuthError('');
+                try {
+                    if (authMode === 'login') {
+                        await auth.signInWithEmailAndPassword(email, password);
+                    } else {
+                        await auth.createUserWithEmailAndPassword(email, password);
+                    }
+                } catch (err) {
+                    setAuthError(err.message);
+                }
+            };
+
+            const handleAddVial = async (e) => {
+                e.preventDefault();
+                await db.collection('users').doc(user.uid).collection('vials').add({
+                    ...formData,
+                    mg: parseFloat(formData.mg),
+                    bac: parseFloat(formData.bac) || 0,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                setFormData({ name: '', mg: '', bac: '', expDate: '' });
+                setActiveTab('inventory');
+            };
+
+            const deleteVial = async (id) => {
+                await db.collection('users').doc(user.uid).collection('vials').doc(id).delete();
+            };
+
+            const saveVaultName = async () => {
+                await db.collection('users').doc(user.uid).collection('settings').doc('profile').set({ vaultName }, { merge: true });
+                setActiveTab('inventory');
+            };
+
+            if (loading) return (
+                <div className="min-h-screen flex items-center justify-center">
+                    <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                </div>
+            );
+
+            if (!user) return (
+                <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50">
+                    <div className="w-full max-w-md bg-white p-8 rounded-[3rem] shadow-2xl border border-slate-100 space-y-8">
+                        <div className="text-center space-y-2">
+                            <div className="inline-flex bg-blue-600 p-4 rounded-[2rem] shadow-xl mb-4">
+                                <Icon name="flask-conical" size={40} className="text-white" />
+                            </div>
+                            <h1 className="text-5xl font-bold text-slate-900 leading-none brand-font">PepVault</h1>
+                        </div>
+                        <form onSubmit={handleAuth} className="space-y-4">
+                            <input type="email" placeholder="Email" className="w-full p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500 font-bold" value={email} onChange={e => setEmail(e.target.value)} required />
+                            <input type="password" placeholder="Password" className="w-full p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500 font-bold" value={password} onChange={e => setPassword(e.target.value)} required />
+                            {authError && <p className="text-red-500 text-xs font-bold px-2">{authError}</p>}
+                            <button className="w-full bg-blue-600 text-white font-black py-5 rounded-2xl shadow-lg uppercase tracking-widest text-xs">{authMode === 'login' ? 'Open Vault' : 'Create Vault'}</button>
+                        </form>
+                        <button onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')} className="w-full text-slate-400 font-bold text-[10px] uppercase tracking-widest">{authMode === 'login' ? 'New? Create Account' : 'Have account? Sign In'}</button>
+                    </div>
+                </div>
+            );
+
+            return (
+                <div className="min-h-screen pb-32">
+                    <header className="bg-white border-b border-slate-200 sticky top-0 z-20 px-6 py-5 flex justify-between items-center">
+                        <div className="flex items-center gap-3">
+                            <div className="bg-blue-600 p-2 rounded-xl"><Icon name="flask-conical" size={20} className="text-white" /></div>
+                            <div>
+                                <h1 className="text-2xl font-bold brand-font leading-none">{vaultName}</h1>
+                                <p className="text-[9px] font-bold text-emerald-500 uppercase tracking-widest">{user.email}</p>
+                            </div>
+                        </div>
+                        <button onClick={() => setActiveTab('profile')} className="text-slate-400"><Icon name="settings" size={20} /></button>
+                    </header>
+
+                    <main className="max-w-xl mx-auto p-4 md:p-6 space-y-6">
+                        {activeTab === 'profile' ? (
+                            <div className="bg-white p-8 rounded-[2.5rem] shadow-xl space-y-8">
+                                <h2 className="text-2xl font-black uppercase tracking-tighter">Vault Settings</h2>
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Vault Display Name</label>
+                                    <div className="flex gap-2">
+                                        <input type="text" className="flex-1 p-4 bg-slate-50 rounded-2xl font-bold outline-none border-2 border-transparent focus:border-blue-500" value={vaultName} onChange={e => setVaultName(e.target.value)} />
+                                        <button onClick={saveVaultName} className="bg-blue-600 text-white p-4 rounded-2xl"><Icon name="save" size={20} /></button>
+                                    </div>
+                                </div>
+                                <button onClick={() => auth.signOut()} className="w-full py-4 bg-red-50 text-red-500 font-black rounded-2xl uppercase text-[10px] tracking-widest">Sign Out</button>
+                                <button onClick={() => setActiveTab('inventory')} className="w-full text-slate-300 font-bold text-[10px] uppercase tracking-widest">Back</button>
+                            </div>
+                        ) : activeTab === 'add' ? (
+                            <form onSubmit={handleAddVial} className="bg-white p-8 rounded-[3rem] shadow-xl space-y-6">
+                                <h2 className="text-2xl font-black uppercase tracking-tighter">New Entry</h2>
+                                <input type="text" placeholder="Compound Name" className="w-full p-4 bg-slate-50 rounded-2xl font-bold" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} required />
+                                <div className="grid grid-cols-2 gap-4">
+                                    <input type="number" step="0.01" placeholder="MG" className="p-4 bg-slate-50 rounded-2xl font-bold" value={formData.mg} onChange={e => setFormData({...formData, mg: e.target.value})} required />
+                                    <input type="number" step="0.1" placeholder="BAC ML" className="p-4 bg-slate-50 rounded-2xl font-bold" value={formData.bac} onChange={e => setFormData({...formData, bac: e.target.value})} />
+                                </div>
+                                <input type="date" className="w-full p-4 bg-slate-50 rounded-2xl font-bold" value={formData.expDate} onChange={e => setFormData({...formData, expDate: e.target.value})} />
+                                <button type="submit" className="w-full bg-blue-600 text-white font-black py-5 rounded-2xl uppercase tracking-widest text-xs">Verify & Store</button>
+                            </form>
+                        ) : (
+                            <div className="space-y-6">
+                                <div className="relative group">
+                                    <Icon name="search" size={20} className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300" />
+                                    <input type="text" placeholder="Search Vault..." className="w-full pl-14 pr-8 py-5 bg-white border border-slate-200 rounded-[2.5rem] shadow-sm outline-none focus:ring-4 focus:ring-blue-50 font-bold" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                                </div>
+                                {vials.filter(v => v.name.toLowerCase().includes(searchTerm.toLowerCase())).map(vial => {
+                                    const concentration = vial.bac > 0 ? (vial.mg / vial.bac).toFixed(2) : null;
+                                    return (
+                                        <div key={vial.id} className="bg-white p-7 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-4">
+                                            <div className="flex justify-between items-start">
+                                                <div>
+                                                    <h3 className="text-2xl font-black uppercase tracking-tighter text-slate-800 leading-none">{vial.name}</h3>
+                                                    <div className="flex gap-2 mt-3">
+                                                        <span className="bg-blue-600 text-white px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest">{vial.mg}MG</span>
+                                                        {concentration && <span className="bg-emerald-50 text-emerald-700 px-3 py-1 rounded-lg text-[9px] font-black border border-emerald-100 uppercase tracking-widest">{concentration} MG/ML</span>}
+                                                    </div>
+                                                </div>
+                                                <button onClick={() => deleteVial(vial.id)} className="text-slate-200 hover:text-red-500"><Icon name="trash-2" size={24} /></button>
+                                            </div>
+                                            {concentration && (
+                                                <div className="bg-slate-50 p-4 rounded-2xl flex items-center gap-3 text-[10px] font-bold text-slate-600 border border-slate-100 shadow-inner">
+                                                    <Icon name="info" size={14} className="text-blue-500" />
+                                                    Guide: {(concentration * 10).toFixed(0)}mcg per 10u (0.1ml)
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </main>
+
+                    <nav className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-900/90 backdrop-blur-xl border border-white/10 px-10 py-5 flex gap-14 items-center z-20 rounded-[3rem] shadow-2xl">
+                        <button onClick={() => setActiveTab('inventory')} className={`flex flex-col items-center gap-2 transition-all ${activeTab === 'inventory' ? 'text-blue-400 scale-110' : 'text-slate-500'}`}>
+                            <Icon name="flask-conical" size={24} />
+                            <span className="text-[8px] font-black uppercase tracking-[0.3em]">Vault</span>
+                        </button>
+                        <div className="w-px h-6 bg-white/10"></div>
+                        <button onClick={() => setActiveTab('add')} className={`flex flex-col items-center gap-2 transition-all ${activeTab === 'add' ? 'text-blue-400 scale-110' : 'text-slate-500'}`}>
+                            <Icon name="plus" size={28} />
+                            <span className="text-[9px] font-black uppercase tracking-[0.3em]">Entry</span>
+                        </button>
+                    </nav>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
