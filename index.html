@@ -45,7 +45,7 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useMemo } = React;
+        const { useState, useEffect } = React;
 
         // --- FIREBASE CONFIGURATION ---
         const firebaseConfig = {
@@ -349,13 +349,13 @@
                                         const currentDose = vial.targetDose || 0;
                                         const daysRemaining = (currentDose > 0) ? Math.floor(totalMcg / currentDose) : 0;
                                         
-                                        // Calculate exact end date
-                                        const endDateStr = useMemo(() => {
+                                        // Calculate exact end date safely (Without using a React Hook inside loop)
+                                        const endDateStr = (() => {
                                             if (daysRemaining <= 0) return null;
                                             const today = new Date();
                                             today.setDate(today.getDate() + daysRemaining);
                                             return today.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-                                        }, [daysRemaining]);
+                                        })();
 
                                         const concentrationMgMl = vial.bac > 0 ? (vial.mg / vial.bac) : 0;
                                         const mcgPerUnit = concentrationMgMl * 10; 
