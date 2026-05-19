@@ -72,6 +72,78 @@
             return <i data-lucide={name} style={{ width: size, height: size }} className={className}></i>;
         };
 
+        // Calendar Dosing Simulator Helper
+        const simulateDepletion = (totalMg, doseMcg, frequency) => {
+            if (!doseMcg || doseMcg <= 0 || !totalMg || totalMg <= 0) {
+                return { injections: 0, daysSpan: 0, dateStr: null };
+            }
+
+            const totalMcg = totalMg * 1000;
+            const totalInjections = Math.floor(totalMcg / doseMcg);
+            if (totalInjections <= 0) {
+                return { injections: 0, daysSpan: 0, dateStr: null };
+            }
+
+            let currentDate = new Date();
+            let injectionsRemaining = totalInjections;
+            let dayCounter = 0;
+            let cycleDay = 0;
+
+            // Day-by-day simulation loop to safely handle calendar roll-overs and custom off-days
+            while (injectionsRemaining > 0 && dayCounter < 5000) { // Safely limit to roughly 13 years
+                let isInjectionDay = false;
+
+                switch (frequency) {
+                    case 'daily':
+                        isInjectionDay = true;
+                        break;
+                    case 'eod':
+                        isInjectionDay = (cycleDay % 2 === 0);
+                        break;
+                    case '5-on-2-off':
+                        isInjectionDay = (cycleDay % 7 < 5);
+                        break;
+                    case 'weekly':
+                        isInjectionDay = (cycleDay % 7 === 0);
+                        break;
+                    case 'twice-weekly':
+                        isInjectionDay = (cycleDay % 7 === 0 || cycleDay % 7 === 3);
+                        break;
+                    case 'three-times-weekly':
+                        isInjectionDay = (cycleDay % 7 === 0 || cycleDay % 7 === 2 || cycleDay % 7 === 4);
+                        break;
+                    default:
+                        isInjectionDay = true;
+                }
+
+                if (isInjectionDay) {
+                    injectionsRemaining--;
+                }
+
+                // If we still have injections to calculate, advance the calendar
+                if (injectionsRemaining > 0) {
+                    currentDate.setDate(currentDate.getDate() + 1);
+                    dayCounter++;
+                    cycleDay++;
+                }
+            }
+
+            const dateStr = currentDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+            return { injections: totalInjections, daysSpan: dayCounter, dateStr };
+        };
+
+        const getFrequencyLabel = (freq) => {
+            const labels = {
+                'daily': 'Daily',
+                'eod': 'Every Other Day',
+                '5-on-2-off': '5 Days On / 2 Off',
+                'weekly': 'Once Weekly',
+                'twice-weekly': 'Twice Weekly',
+                'three-times-weekly': '3x Weekly'
+            };
+            return labels[freq] || 'Daily';
+        };
+
         function App() {
             const [user, setUser] = useState(null);
             const [loading, setLoading] = useState(true);
@@ -87,9 +159,9 @@
             
             // Edit Mode State
             const [editingVialId, setEditingVialId] = useState(null);
-            const [editFormData, setEditFormData] = useState({ name: '', mg: '', bac: '', expDate: '' });
+            const [editFormData, setEditFormData] = useState({ name: '', mg: '', bac: '', expDate: '', frequency: 'daily' });
 
-            const [formData, setFormData] = useState({ name: '', mg: '', bac: '', expDate: '', targetDose: 250 });
+            const [formData, setFormData] = useState({ name: '', mg: '', bac: '', expDate: '', targetDose: 250, frequency: 'daily' });
 
             useEffect(() => {
                 const unsubscribe = auth.onAuthStateChanged((u) => {
@@ -143,9 +215,10 @@
                     mg: parseFloat(formData.mg),
                     bac: parseFloat(formData.bac) || 0,
                     targetDose: parseFloat(formData.targetDose) || 250,
+                    frequency: formData.frequency || 'daily',
                     createdAt: firebase.firestore.FieldValue.serverTimestamp()
                 });
-                setFormData({ name: '', mg: '', bac: '', expDate: '', targetDose: 250 });
+                setFormData({ name: '', mg: '', bac: '', expDate: '', targetDose: 250, frequency: 'daily' });
                 setActiveTab('inventory');
             };
 
@@ -155,7 +228,8 @@
                     name: vial.name,
                     mg: vial.mg,
                     bac: vial.bac,
-                    expDate: vial.expDate || ''
+                    expDate: vial.expDate || '',
+                    frequency: vial.frequency || 'daily'
                 });
             };
 
@@ -164,7 +238,8 @@
                     name: editFormData.name,
                     mg: parseFloat(editFormData.mg),
                     bac: parseFloat(editFormData.bac) || 0,
-                    expDate: editFormData.expDate || null
+                    expDate: editFormData.expDate || null,
+                    frequency: editFormData.frequency || 'daily'
                 });
                 setEditingVialId(null);
             };
@@ -317,9 +392,22 @@
                                         <input type="number" step="0.1" placeholder="2.0" className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none" value={formData.bac} onChange={e => setFormData({...formData, bac: e.target.value})} />
                                     </div>
                                 </div>
-                                <div className="space-y-1">
-                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-2">Target Dose (mcg)</label>
-                                    <input type="number" step="1" placeholder="250" className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none" value={formData.targetDose} onChange={e => setFormData({...formData, targetDose: e.target.value})} />
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-2">Target Dose (mcg)</label>
+                                        <input type="number" step="1" placeholder="250" className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none" value={formData.targetDose} onChange={e => setFormData({...formData, targetDose: e.target.value})} />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-2">Dosing Frequency</label>
+                                        <select className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none" value={formData.frequency} onChange={e => setFormData({...formData, frequency: e.target.value})}>
+                                            <option value="daily">Daily</option>
+                                            <option value="eod">Every Other Day</option>
+                                            <option value="5-on-2-off">5 Days On / 2 Off</option>
+                                            <option value="weekly">Once Weekly</option>
+                                            <option value="twice-weekly">Twice Weekly</option>
+                                            <option value="three-times-weekly">3x Weekly</option>
+                                        </select>
+                                    </div>
                                 </div>
                                 <div className="space-y-1">
                                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-2">Recon / Exp Date</label>
@@ -344,22 +432,12 @@
                                     vials.filter(v => v.name.toLowerCase().includes(searchTerm.toLowerCase())).map(vial => {
                                         const isEditing = editingVialId === vial.id;
                                         
-                                        // Calculations
-                                        const totalMcg = vial.mg * 1000;
-                                        const currentDose = vial.targetDose || 0;
-                                        const daysRemaining = (currentDose > 0) ? Math.floor(totalMcg / currentDose) : 0;
-                                        
-                                        // Calculate exact end date safely (Without using a React Hook inside loop)
-                                        const endDateStr = (() => {
-                                            if (daysRemaining <= 0) return null;
-                                            const today = new Date();
-                                            today.setDate(today.getDate() + daysRemaining);
-                                            return today.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-                                        })();
+                                        // Dynamic Calendar Simulation (Safe from inside loop)
+                                        const scheduleMetrics = simulateDepletion(vial.mg, vial.targetDose, vial.frequency || 'daily');
 
                                         const concentrationMgMl = vial.bac > 0 ? (vial.mg / vial.bac) : 0;
                                         const mcgPerUnit = concentrationMgMl * 10; 
-                                        const unitsNeeded = (mcgPerUnit > 0 && currentDose > 0) ? (currentDose / mcgPerUnit).toFixed(1) : 0;
+                                        const unitsNeeded = (mcgPerUnit > 0 && vial.targetDose > 0) ? (vial.targetDose / mcgPerUnit).toFixed(1) : 0;
 
                                         return (
                                             <div key={vial.id} className="bg-white p-7 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-4 animate-fade-in hover:shadow-md transition-shadow relative overflow-hidden group">
@@ -375,12 +453,37 @@
                                                             </div>
                                                         </div>
                                                         <div className="space-y-3">
-                                                            <input type="text" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-700" value={editFormData.name} onChange={e => setEditFormData({...editFormData, name: e.target.value})} placeholder="Name" />
-                                                            <div className="grid grid-cols-2 gap-3">
-                                                                <input type="number" step="0.01" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-700" value={editFormData.mg} onChange={e => setEditFormData({...editFormData, mg: e.target.value})} placeholder="Total MG" />
-                                                                <input type="number" step="0.1" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-700" value={editFormData.bac} onChange={e => setEditFormData({...editFormData, bac: e.target.value})} placeholder="BAC ml" />
+                                                            <div className="space-y-1">
+                                                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider ml-1">Compound Name</label>
+                                                                <input type="text" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-700" value={editFormData.name} onChange={e => setEditFormData({...editFormData, name: e.target.value})} placeholder="Name" />
                                                             </div>
-                                                            <input type="date" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-700" value={editFormData.expDate} onChange={e => setEditFormData({...editFormData, expDate: e.target.value})} />
+                                                            <div className="grid grid-cols-2 gap-3">
+                                                                <div className="space-y-1">
+                                                                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider ml-1">Total MG</label>
+                                                                    <input type="number" step="0.01" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-700" value={editFormData.mg} onChange={e => setEditFormData({...editFormData, mg: e.target.value})} placeholder="Total MG" />
+                                                                </div>
+                                                                <div className="space-y-1">
+                                                                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider ml-1">BAC Water (ml)</label>
+                                                                    <input type="number" step="0.1" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-700" value={editFormData.bac} onChange={e => setEditFormData({...editFormData, bac: e.target.value})} placeholder="BAC ml" />
+                                                                </div>
+                                                            </div>
+                                                            <div className="grid grid-cols-2 gap-3">
+                                                                <div className="space-y-1">
+                                                                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider ml-1">Frequency</label>
+                                                                    <select className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-700" value={editFormData.frequency} onChange={e => setEditFormData({...editFormData, frequency: e.target.value})}>
+                                                                        <option value="daily">Daily</option>
+                                                                        <option value="eod">Every Other Day</option>
+                                                                        <option value="5-on-2-off">5 Days On / 2 Off</option>
+                                                                        <option value="weekly">Once Weekly</option>
+                                                                        <option value="twice-weekly">Twice Weekly</option>
+                                                                        <option value="three-times-weekly">3x Weekly</option>
+                                                                    </select>
+                                                                </div>
+                                                                <div className="space-y-1">
+                                                                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider ml-1">Expiration Date</label>
+                                                                    <input type="date" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-700" value={editFormData.expDate} onChange={e => setEditFormData({...editFormData, expDate: e.target.value})} />
+                                                                </div>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 ) : (
@@ -389,9 +492,10 @@
                                                         <div className="flex justify-between items-start relative z-10">
                                                             <div>
                                                                 <h3 className="text-2xl font-black uppercase tracking-tighter text-slate-800 leading-none group-hover:text-blue-600 transition-colors">{vial.name}</h3>
-                                                                <div className="flex gap-2 mt-3">
+                                                                <div className="flex flex-wrap gap-2 mt-3">
                                                                     <span className="bg-blue-600 text-white px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest">{vial.mg}MG</span>
                                                                     {vial.bac > 0 && <span className="bg-emerald-50 text-emerald-700 px-3 py-1 rounded-lg text-[9px] font-black border border-emerald-100 uppercase tracking-widest">{concentrationMgMl.toFixed(2)} MG/ML</span>}
+                                                                    <span className="bg-slate-100 text-slate-600 px-3 py-1 rounded-lg text-[9px] font-black border border-slate-200 uppercase tracking-widest">{getFrequencyLabel(vial.frequency)}</span>
                                                                 </div>
                                                             </div>
                                                             <div className="flex gap-1">
@@ -432,20 +536,22 @@
                                                                 </div>
 
                                                                 {/* --- DURATION AND DEPLETION METRICS --- */}
-                                                                {daysRemaining > 0 && (
+                                                                {scheduleMetrics.injections > 0 && (
                                                                     <div className="grid grid-cols-2 gap-3 px-2 text-xs">
                                                                         <div className="bg-slate-50/50 p-3 rounded-xl border border-slate-100 flex items-center gap-2">
                                                                             <Icon name="clock" size={14} className="text-slate-400" />
                                                                             <div>
                                                                                 <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Supply Life</p>
-                                                                                <p className="font-black text-slate-700">{daysRemaining} Injections</p>
+                                                                                <p className="font-black text-slate-700 leading-tight">{scheduleMetrics.injections} Injections</p>
+                                                                                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter mt-0.5">({scheduleMetrics.daysSpan} calendar days)</p>
                                                                             </div>
                                                                         </div>
                                                                         <div className="bg-slate-50/50 p-3 rounded-xl border border-slate-100 flex items-center gap-2">
                                                                             <Icon name="calendar" size={14} className="text-slate-400" />
                                                                             <div>
                                                                                 <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Depletion Date</p>
-                                                                                <p className="font-black text-slate-700">{endDateStr}</p>
+                                                                                <p className="font-black text-slate-700 leading-tight">{scheduleMetrics.dateStr}</p>
+                                                                                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter mt-0.5">Est. Completion</p>
                                                                             </div>
                                                                         </div>
                                                                     </div>
@@ -471,7 +577,7 @@
                         )}
                     </main>
 
-                    <nav className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-900/95 backdrop-blur-xl border border-white/10 px-10 py-5 flex gap-14 items-center z-20 rounded-[3rem] shadow-2xl">
+                    <nav className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-900/90 backdrop-blur-xl border border-white/10 px-10 py-5 flex gap-14 items-center z-20 rounded-[3rem] shadow-2xl">
                         <button onClick={() => setActiveTab('inventory')} className={`flex flex-col items-center gap-2 transition-all ${activeTab === 'inventory' ? 'text-blue-400 scale-110' : 'text-slate-500 hover:text-slate-400'}`}>
                             <Icon name="flask-conical" size={24} />
                             <span className="text-[8px] font-black uppercase tracking-[0.3em]">Vault</span>
