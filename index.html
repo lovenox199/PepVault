@@ -77,13 +77,18 @@
             const [loading, setLoading] = useState(true);
             const [vials, setVials] = useState([]);
             const [activeTab, setActiveTab] = useState('inventory');
-            const [authMode, setAuthMode] = useState('login');
+            const [authMode, setAuthMode] = useState('login'); // 'login' | 'signup' | 'forgot'
             const [email, setEmail] = useState('');
             const [password, setPassword] = useState('');
             const [authError, setAuthError] = useState('');
+            const [authSuccess, setAuthSuccess] = useState('');
             const [vaultName, setVaultName] = useState('PepVault');
             const [searchTerm, setSearchTerm] = useState('');
             
+            // Edit Mode State
+            const [editingVialId, setEditingVialId] = useState(null);
+            const [editFormData, setEditFormData] = useState({ name: '', mg: '', bac: '', expDate: '' });
+
             const [formData, setFormData] = useState({ name: '', mg: '', bac: '', expDate: '', targetDose: 250 });
 
             useEffect(() => {
@@ -116,11 +121,15 @@
             const handleAuth = async (e) => {
                 e.preventDefault();
                 setAuthError('');
+                setAuthSuccess('');
                 try {
                     if (authMode === 'login') {
                         await auth.signInWithEmailAndPassword(email, password);
-                    } else {
+                    } else if (authMode === 'signup') {
                         await auth.createUserWithEmailAndPassword(email, password);
+                    } else if (authMode === 'forgot') {
+                        await auth.sendPasswordResetEmail(email);
+                        setAuthSuccess('Password reset link sent! Please check your inbox.');
                     }
                 } catch (err) {
                     setAuthError(err.message);
@@ -138,6 +147,26 @@
                 });
                 setFormData({ name: '', mg: '', bac: '', expDate: '', targetDose: 250 });
                 setActiveTab('inventory');
+            };
+
+            const startEditing = (vial) => {
+                setEditingVialId(vial.id);
+                setEditFormData({
+                    name: vial.name,
+                    mg: vial.mg,
+                    bac: vial.bac,
+                    expDate: vial.expDate || ''
+                });
+            };
+
+            const handleSaveEdit = async (id) => {
+                await db.collection('users').doc(user.uid).collection('vials').doc(id).update({
+                    name: editFormData.name,
+                    mg: parseFloat(editFormData.mg),
+                    bac: parseFloat(editFormData.bac) || 0,
+                    expDate: editFormData.expDate || null
+                });
+                setEditingVialId(null);
             };
 
             const updateVialDose = async (id, newDose) => {
@@ -174,36 +203,66 @@
                             <h1 className="text-5xl font-bold text-slate-900 leading-none brand-font">PepVault</h1>
                         </div>
                         <form onSubmit={handleAuth} className="space-y-4">
-                            <input 
-                                type="email" 
-                                name="email"
-                                id="email"
-                                autoComplete="username email"
-                                placeholder="Email" 
-                                className="w-full p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500 font-bold" 
-                                value={email} 
-                                onChange={e => setEmail(e.target.value)} 
-                                required 
-                            />
-                            <input 
-                                type="password" 
-                                name="password"
-                                id="password"
-                                autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
-                                placeholder="Password" 
-                                className="w-full p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500 font-bold" 
-                                value={password} 
-                                onChange={e => setPassword(e.target.value)} 
-                                required 
-                            />
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-2">Email Address</label>
+                                <input 
+                                    type="email" 
+                                    name="email"
+                                    id="email"
+                                    autoComplete="username email"
+                                    placeholder="name@example.com" 
+                                    className="w-full p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500 font-bold" 
+                                    value={email} 
+                                    onChange={e => setEmail(e.target.value)} 
+                                    required 
+                                />
+                            </div>
+                            {authMode !== 'forgot' && (
+                                <div className="space-y-1 animate-fade-in">
+                                    <div className="flex justify-between items-center px-2">
+                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Password</label>
+                                        {authMode === 'login' && (
+                                            <button 
+                                                type="button" 
+                                                onClick={() => { setAuthMode('forgot'); setAuthError(''); setAuthSuccess(''); }}
+                                                className="text-xs font-bold text-blue-600 hover:underline"
+                                            >
+                                                Forgot?
+                                            </button>
+                                        )}
+                                    </div>
+                                    <input 
+                                        type="password" 
+                                        name="password"
+                                        id="password"
+                                        autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
+                                        placeholder="••••••••" 
+                                        className="w-full p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500 font-bold" 
+                                        value={password} 
+                                        onChange={e => setPassword(e.target.value)} 
+                                        required 
+                                    />
+                                </div>
+                            )}
+                            
                             {authError && <p className="text-red-500 text-xs font-bold px-2">{authError}</p>}
+                            {authSuccess && <p className="text-emerald-600 text-xs font-bold px-2">{authSuccess}</p>}
+                            
                             <button className="w-full bg-blue-600 text-white font-black py-5 rounded-2xl shadow-lg uppercase tracking-widest text-xs active:scale-95 transition-transform">
-                                {authMode === 'login' ? 'Open Vault' : 'Create Vault'}
+                                {authMode === 'login' ? 'Open Vault' : authMode === 'signup' ? 'Create Vault' : 'Send Reset Link'}
                             </button>
                         </form>
-                        <button onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')} className="w-full text-slate-400 font-bold text-[10px] uppercase tracking-widest">
-                            {authMode === 'login' ? 'New? Create Account' : 'Have account? Sign In'}
-                        </button>
+                        <div className="flex flex-col items-center gap-2 pt-2">
+                            {authMode === 'forgot' ? (
+                                <button onClick={() => { setAuthMode('login'); setAuthError(''); setAuthSuccess(''); }} className="text-slate-400 font-bold text-[10px] uppercase tracking-widest">
+                                    Back to Sign In
+                                </button>
+                            ) : (
+                                <button onClick={() => { setAuthMode(authMode === 'login' ? 'signup' : 'login'); setAuthError(''); setAuthSuccess(''); }} className="text-slate-400 font-bold text-[10px] uppercase tracking-widest">
+                                    {authMode === 'login' ? 'New? Create Account' : 'Have account? Sign In'}
+                                </button>
+                            )}
+                        </div>
                     </div>
                 </div>
             );
@@ -283,63 +342,127 @@
                                     </div>
                                 ) : (
                                     vials.filter(v => v.name.toLowerCase().includes(searchTerm.toLowerCase())).map(vial => {
+                                        const isEditing = editingVialId === vial.id;
+                                        
+                                        // Calculations
+                                        const totalMcg = vial.mg * 1000;
+                                        const currentDose = vial.targetDose || 0;
+                                        const daysRemaining = (currentDose > 0) ? Math.floor(totalMcg / currentDose) : 0;
+                                        
+                                        // Calculate exact end date
+                                        const endDateStr = useMemo(() => {
+                                            if (daysRemaining <= 0) return null;
+                                            const today = new Date();
+                                            today.setDate(today.getDate() + daysRemaining);
+                                            return today.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+                                        }, [daysRemaining]);
+
                                         const concentrationMgMl = vial.bac > 0 ? (vial.mg / vial.bac) : 0;
                                         const mcgPerUnit = concentrationMgMl * 10; 
-                                        const currentDose = vial.targetDose || 0;
                                         const unitsNeeded = (mcgPerUnit > 0 && currentDose > 0) ? (currentDose / mcgPerUnit).toFixed(1) : 0;
 
                                         return (
                                             <div key={vial.id} className="bg-white p-7 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-4 animate-fade-in hover:shadow-md transition-shadow relative overflow-hidden group">
-                                                <div className="flex justify-between items-start relative z-10">
-                                                    <div>
-                                                        <h3 className="text-2xl font-black uppercase tracking-tighter text-slate-800 leading-none group-hover:text-blue-600 transition-colors">{vial.name}</h3>
-                                                        <div className="flex gap-2 mt-3">
-                                                            <span className="bg-blue-600 text-white px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest">{vial.mg}MG</span>
-                                                            {vial.bac > 0 && <span className="bg-emerald-50 text-emerald-700 px-3 py-1 rounded-lg text-[9px] font-black border border-emerald-100 uppercase tracking-widest">{concentrationMgMl.toFixed(2)} MG/ML</span>}
+                                                
+                                                {isEditing ? (
+                                                    /* --- EDITING CARD VIEW --- */
+                                                    <div className="space-y-4 animate-fade-in">
+                                                        <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+                                                            <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">Modify Asset</h4>
+                                                            <div className="flex gap-2">
+                                                                <button onClick={() => handleSaveEdit(vial.id)} className="text-emerald-600 p-1.5 bg-emerald-50 rounded-lg hover:scale-105 transition-transform"><Icon name="save" size={16} /></button>
+                                                                <button onClick={() => setEditingVialId(null)} className="text-slate-400 p-1.5 bg-slate-50 rounded-lg"><Icon name="x" size={16} /></button>
+                                                            </div>
                                                         </div>
-                                                    </div>
-                                                    <button onClick={() => deleteVial(vial.id)} className="text-slate-200 hover:text-red-500 p-2 transition-colors"><Icon name="trash-2" size={20} /></button>
-                                                </div>
-
-                                                {vial.bac > 0 ? (
-                                                    <div className="bg-slate-50 p-5 rounded-[1.5rem] border border-slate-100 shadow-inner space-y-4">
-                                                        <div className="flex items-center justify-between gap-4">
-                                                            <div className="flex items-center gap-2">
-                                                                <div className="bg-white p-1.5 rounded-lg shadow-sm">
-                                                                    <Icon name="activity" size={14} className="text-blue-600" />
-                                                                </div>
-                                                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Desired Dose (mcg)</p>
+                                                        <div className="space-y-3">
+                                                            <input type="text" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-700" value={editFormData.name} onChange={e => setEditFormData({...editFormData, name: e.target.value})} placeholder="Name" />
+                                                            <div className="grid grid-cols-2 gap-3">
+                                                                <input type="number" step="0.01" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-700" value={editFormData.mg} onChange={e => setEditFormData({...editFormData, mg: e.target.value})} placeholder="Total MG" />
+                                                                <input type="number" step="0.1" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-700" value={editFormData.bac} onChange={e => setEditFormData({...editFormData, bac: e.target.value})} placeholder="BAC ml" />
                                                             </div>
-                                                            <input 
-                                                                type="number"
-                                                                className="w-24 p-2 bg-white border border-slate-200 rounded-xl text-center font-black text-slate-800 outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                                                                value={vial.targetDose || 0}
-                                                                onChange={(e) => updateVialDose(vial.id, e.target.value)}
-                                                            />
-                                                        </div>
-
-                                                        <div className="flex items-center gap-4 text-xs font-bold text-slate-600 pt-3 border-t border-slate-200/50">
-                                                            <div className="bg-white p-2 rounded-xl shadow-sm">
-                                                                <Icon name="info" size={18} className="text-blue-500" />
-                                                            </div>
-                                                            <div className="flex-1 flex items-center justify-between">
-                                                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Syringe Draw</p>
-                                                                <p className="text-slate-800 font-black tracking-tight text-sm">
-                                                                    <span className="text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-lg">{unitsNeeded} Units</span>
-                                                                </p>
-                                                            </div>
+                                                            <input type="date" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-700" value={editFormData.expDate} onChange={e => setEditFormData({...editFormData, expDate: e.target.value})} />
                                                         </div>
                                                     </div>
                                                 ) : (
-                                                    <div className="p-4 bg-amber-50 rounded-2xl flex items-center gap-3 text-[10px] font-bold text-amber-600 border border-amber-100">
-                                                        <Icon name="alert-circle" size={14} /> Mix with BAC water to calculate dose.
-                                                    </div>
-                                                )}
+                                                    /* --- STANDARD CARD VIEW --- */
+                                                    <>
+                                                        <div className="flex justify-between items-start relative z-10">
+                                                            <div>
+                                                                <h3 className="text-2xl font-black uppercase tracking-tighter text-slate-800 leading-none group-hover:text-blue-600 transition-colors">{vial.name}</h3>
+                                                                <div className="flex gap-2 mt-3">
+                                                                    <span className="bg-blue-600 text-white px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest">{vial.mg}MG</span>
+                                                                    {vial.bac > 0 && <span className="bg-emerald-50 text-emerald-700 px-3 py-1 rounded-lg text-[9px] font-black border border-emerald-100 uppercase tracking-widest">{concentrationMgMl.toFixed(2)} MG/ML</span>}
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex gap-1">
+                                                                <button onClick={() => startEditing(vial)} className="text-slate-300 hover:text-blue-500 p-2 transition-colors"><Icon name="pencil" size={18} /></button>
+                                                                <button onClick={() => deleteVial(vial.id)} className="text-slate-300 hover:text-red-500 p-2 transition-colors"><Icon name="trash-2" size={18} /></button>
+                                                            </div>
+                                                        </div>
 
-                                                <div className="flex justify-between text-[8px] font-bold text-slate-300 uppercase tracking-widest pt-2 border-t border-slate-50">
-                                                    <span className="flex items-center gap-1"><Icon name="calendar" size={10} /> {vial.expDate || 'No date set'}</span>
-                                                    <span>{vial.createdAt ? 'Synced' : 'Saving...'}</span>
-                                                </div>
+                                                        {vial.bac > 0 ? (
+                                                            <div className="space-y-3">
+                                                                <div className="bg-slate-50 p-5 rounded-[1.5rem] border border-slate-100 shadow-inner space-y-4">
+                                                                    <div className="flex items-center justify-between gap-4">
+                                                                        <div className="flex items-center gap-2">
+                                                                            <div className="bg-white p-1.5 rounded-lg shadow-sm">
+                                                                                <Icon name="activity" size={14} className="text-blue-600" />
+                                                                            </div>
+                                                                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Desired Dose (mcg)</p>
+                                                                        </div>
+                                                                        <input 
+                                                                            type="number"
+                                                                            className="w-24 p-2 bg-white border border-slate-200 rounded-xl text-center font-black text-slate-800 outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                                                                            value={vial.targetDose || 0}
+                                                                            onChange={(e) => updateVialDose(vial.id, e.target.value)}
+                                                                        />
+                                                                    </div>
+
+                                                                    <div className="flex items-center gap-4 text-xs font-bold text-slate-600 pt-3 border-t border-slate-200/50">
+                                                                        <div className="bg-white p-2 rounded-xl shadow-sm">
+                                                                            <Icon name="info" size={18} className="text-blue-500" />
+                                                                        </div>
+                                                                        <div className="flex-1 flex items-center justify-between">
+                                                                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Syringe Draw</p>
+                                                                            <p className="text-slate-800 font-black tracking-tight text-sm">
+                                                                                <span className="text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-lg">{unitsNeeded} Units</span>
+                                                                            </p>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* --- DURATION AND DEPLETION METRICS --- */}
+                                                                {daysRemaining > 0 && (
+                                                                    <div className="grid grid-cols-2 gap-3 px-2 text-xs">
+                                                                        <div className="bg-slate-50/50 p-3 rounded-xl border border-slate-100 flex items-center gap-2">
+                                                                            <Icon name="clock" size={14} className="text-slate-400" />
+                                                                            <div>
+                                                                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Supply Life</p>
+                                                                                <p className="font-black text-slate-700">{daysRemaining} Injections</p>
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="bg-slate-50/50 p-3 rounded-xl border border-slate-100 flex items-center gap-2">
+                                                                            <Icon name="calendar" size={14} className="text-slate-400" />
+                                                                            <div>
+                                                                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Depletion Date</p>
+                                                                                <p className="font-black text-slate-700">{endDateStr}</p>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        ) : (
+                                                            <div className="p-4 bg-amber-50 rounded-2xl flex items-center gap-3 text-[10px] font-bold text-amber-600 border border-amber-100">
+                                                                <Icon name="alert-circle" size={14} /> Mix with BAC water to calculate metrics.
+                                                            </div>
+                                                        )}
+
+                                                        <div className="flex justify-between text-[8px] font-bold text-slate-300 uppercase tracking-widest pt-2 border-t border-slate-50">
+                                                            <span className="flex items-center gap-1"><Icon name="calendar" size={10} /> {vial.expDate || 'No date set'}</span>
+                                                            <span>{vial.createdAt ? 'Synced' : 'Saving...'}</span>
+                                                        </div>
+                                                    </>
+                                                )}
                                             </div>
                                         );
                                     })
