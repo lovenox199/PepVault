@@ -73,24 +73,26 @@
         };
 
         // Calendar Dosing Simulator Helper
-        const simulateDepletion = (totalMg, doseMcg, frequency) => {
+        const simulateDepletion = (totalMg, doseMcg, frequency, injectionStartDate) => {
             if (!doseMcg || doseMcg <= 0 || !totalMg || totalMg <= 0) {
-                return { injections: 0, daysSpan: 0, dateStr: null };
+                return { injections: 0, calendarDays: 0, daysUntilFinalDose: 0, dateStr: null };
             }
 
             const totalMcg = totalMg * 1000;
             const totalInjections = Math.floor(totalMcg / doseMcg);
             if (totalInjections <= 0) {
-                return { injections: 0, daysSpan: 0, dateStr: null };
+                return { injections: 0, calendarDays: 0, daysUntilFinalDose: 0, dateStr: null };
             }
 
-            let currentDate = new Date();
-            let injectionsRemaining = totalInjections;
-            let dayCounter = 0;
+            const finalDoseDate = injectionStartDate ? new Date(`${injectionStartDate}T00:00:00`) : new Date();
+            finalDoseDate.setHours(0, 0, 0, 0);
+            let injectionsGiven = 0;
+            let daysUntilFinalDose = 0;
             let cycleDay = 0;
 
-            // Day-by-day simulation loop to safely handle calendar roll-overs and custom off-days
-            while (injectionsRemaining > 0 && dayCounter < 5000) { // Safely limit to roughly 13 years
+            // Counts the injection start date as the first possible dosing day. The displayed date is the FINAL dose date.
+            // Example: 10 daily injections starting on Jun 10 = final dose on Jun 19, but 10 calendar days of supply.
+            while (injectionsGiven < totalInjections && daysUntilFinalDose < 5000) {
                 let isInjectionDay = false;
 
                 switch (frequency) {
@@ -117,19 +119,28 @@
                 }
 
                 if (isInjectionDay) {
-                    injectionsRemaining--;
+                    injectionsGiven++;
+                    if (injectionsGiven === totalInjections) break;
                 }
 
-                // If we still have injections to calculate, advance the calendar
-                if (injectionsRemaining > 0) {
-                    currentDate.setDate(currentDate.getDate() + 1);
-                    dayCounter++;
-                    cycleDay++;
-                }
+                finalDoseDate.setDate(finalDoseDate.getDate() + 1);
+                daysUntilFinalDose++;
+                cycleDay++;
             }
 
-            const dateStr = currentDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-            return { injections: totalInjections, daysSpan: dayCounter, dateStr };
+            const dateStr = finalDoseDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+            return {
+                injections: totalInjections,
+                calendarDays: daysUntilFinalDose + 1,
+                daysUntilFinalDose,
+                dateStr
+            };
+        };
+
+        const getTodayInputDate = () => {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            return today.toISOString().split('T')[0];
         };
 
         const getFrequencyLabel = (freq) => {
@@ -159,9 +170,9 @@
             
             // Edit Mode State
             const [editingVialId, setEditingVialId] = useState(null);
-            const [editFormData, setEditFormData] = useState({ name: '', mg: '', bac: '', expDate: '', frequency: 'daily' });
+            const [editFormData, setEditFormData] = useState({ name: '', mg: '', bac: '', expDate: '', injectionStartDate: getTodayInputDate(), frequency: 'daily' });
 
-            const [formData, setFormData] = useState({ name: '', mg: '', bac: '', expDate: '', targetDose: 250, frequency: 'daily' });
+            const [formData, setFormData] = useState({ name: '', mg: '', bac: '', expDate: '', injectionStartDate: getTodayInputDate(), targetDose: 250, frequency: 'daily' });
 
             useEffect(() => {
                 const unsubscribe = auth.onAuthStateChanged((u) => {
@@ -218,7 +229,7 @@
                     frequency: formData.frequency || 'daily',
                     createdAt: firebase.firestore.FieldValue.serverTimestamp()
                 });
-                setFormData({ name: '', mg: '', bac: '', expDate: '', targetDose: 250, frequency: 'daily' });
+                setFormData({ name: '', mg: '', bac: '', expDate: '', injectionStartDate: getTodayInputDate(), targetDose: 250, frequency: 'daily' });
                 setActiveTab('inventory');
             };
 
@@ -229,6 +240,7 @@
                     mg: vial.mg,
                     bac: vial.bac,
                     expDate: vial.expDate || '',
+                    injectionStartDate: vial.injectionStartDate || getTodayInputDate(),
                     frequency: vial.frequency || 'daily'
                 });
             };
@@ -239,6 +251,7 @@
                     mg: parseFloat(editFormData.mg),
                     bac: parseFloat(editFormData.bac) || 0,
                     expDate: editFormData.expDate || null,
+                    injectionStartDate: editFormData.injectionStartDate || getTodayInputDate(),
                     frequency: editFormData.frequency || 'daily'
                 });
                 setEditingVialId(null);
@@ -409,11 +422,17 @@
                                         </select>
                                     </div>
                                 </div>
-                                <div className="space-y-1">
-                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-2">Recon / Exp Date</label>
-                                    <input type="date" className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none" value={formData.expDate} onChange={e => setFormData({...formData, expDate: e.target.value})} />
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-2">Injection Start Date</label>
+                                        <input type="date" className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none" value={formData.injectionStartDate} onChange={e => setFormData({...formData, injectionStartDate: e.target.value})} />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-2">Expiration Date</label>
+                                        <input type="date" className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none" value={formData.expDate} onChange={e => setFormData({...formData, expDate: e.target.value})} />
+                                    </div>
                                 </div>
-                                <button type="submit" className="w-full bg-blue-600 text-white font-black py-5 rounded-2xl uppercase tracking-widest text-xs shadow-lg active:scale-95 transition-transform">Verify & Store</button>
+                                <button type="submit" className="w-full bg-blue-600 text-white font-black py-5 rounded-2xl uppercase tracking-widest text-xs shadow-lg active:scale-95 transition-transform">Calculate & Save</button>
                             </form>
                         ) : (
                             <div className="space-y-6">
@@ -433,7 +452,7 @@
                                         const isEditing = editingVialId === vial.id;
                                         
                                         // Dynamic Calendar Simulation (Safe from inside loop)
-                                        const scheduleMetrics = simulateDepletion(vial.mg, vial.targetDose, vial.frequency || 'daily');
+                                        const scheduleMetrics = simulateDepletion(vial.mg, vial.targetDose, vial.frequency || 'daily', vial.injectionStartDate);
 
                                         const concentrationMgMl = vial.bac > 0 ? (vial.mg / vial.bac) : 0;
                                         const mcgPerUnit = concentrationMgMl * 10; 
@@ -480,9 +499,13 @@
                                                                     </select>
                                                                 </div>
                                                                 <div className="space-y-1">
-                                                                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider ml-1">Expiration Date</label>
-                                                                    <input type="date" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-700" value={editFormData.expDate} onChange={e => setEditFormData({...editFormData, expDate: e.target.value})} />
+                                                                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider ml-1">Start Date</label>
+                                                                    <input type="date" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-700" value={editFormData.injectionStartDate} onChange={e => setEditFormData({...editFormData, injectionStartDate: e.target.value})} />
                                                                 </div>
+                                                            </div>
+                                                            <div className="space-y-1">
+                                                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider ml-1">Expiration Date</label>
+                                                                <input type="date" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-700" value={editFormData.expDate} onChange={e => setEditFormData({...editFormData, expDate: e.target.value})} />
                                                             </div>
                                                         </div>
                                                     </div>
@@ -533,6 +556,23 @@
                                                                             </p>
                                                                         </div>
                                                                     </div>
+
+                                                                    <details className="pt-3 border-t border-slate-200/50 group/formula">
+                                                                        <summary className="flex items-center justify-between cursor-pointer list-none">
+                                                                            <div className="flex items-center gap-2">
+                                                                                <div className="bg-white p-1.5 rounded-lg shadow-sm">
+                                                                                    <Icon name="calculator" size={14} className="text-slate-500" />
+                                                                                </div>
+                                                                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">How this is calculated</p>
+                                                                            </div>
+                                                                            <Icon name="chevron-down" size={14} className="text-slate-300 transition-transform group-open/formula:rotate-180" />
+                                                                        </summary>
+                                                                        <div className="mt-3 bg-white rounded-2xl p-4 border border-slate-100 space-y-2 text-[10px] font-bold text-slate-500 leading-relaxed">
+                                                                            <p><span className="text-slate-800 font-black">Concentration:</span> {vial.mg} mg ÷ {vial.bac} mL = {concentrationMgMl.toFixed(2)} mg/mL</p>
+                                                                            <p><span className="text-slate-800 font-black">mcg per insulin unit:</span> {concentrationMgMl.toFixed(2)} × 10 = {mcgPerUnit.toFixed(1)} mcg/unit</p>
+                                                                            <p><span className="text-slate-800 font-black">Syringe draw:</span> {vial.targetDose || 0} mcg ÷ {mcgPerUnit.toFixed(1)} = {unitsNeeded} units</p>
+                                                                        </div>
+                                                                    </details>
                                                                 </div>
 
                                                                 {/* --- DURATION AND DEPLETION METRICS --- */}
@@ -543,15 +583,15 @@
                                                                             <div>
                                                                                 <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Supply Life</p>
                                                                                 <p className="font-black text-slate-700 leading-tight">{scheduleMetrics.injections} Injections</p>
-                                                                                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter mt-0.5">({scheduleMetrics.daysSpan} calendar days)</p>
+                                                                                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter mt-0.5">({scheduleMetrics.calendarDays} calendar days)</p>
                                                                             </div>
                                                                         </div>
                                                                         <div className="bg-slate-50/50 p-3 rounded-xl border border-slate-100 flex items-center gap-2">
                                                                             <Icon name="calendar" size={14} className="text-slate-400" />
                                                                             <div>
-                                                                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Depletion Date</p>
+                                                                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Final Dose Date</p>
                                                                                 <p className="font-black text-slate-700 leading-tight">{scheduleMetrics.dateStr}</p>
-                                                                                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter mt-0.5">Est. Completion</p>
+                                                                                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter mt-0.5">From Start Date</p>
                                                                             </div>
                                                                         </div>
                                                                     </div>
@@ -563,8 +603,9 @@
                                                             </div>
                                                         )}
 
-                                                        <div className="flex justify-between text-[8px] font-bold text-slate-300 uppercase tracking-widest pt-2 border-t border-slate-50">
-                                                            <span className="flex items-center gap-1"><Icon name="calendar" size={10} /> {vial.expDate || 'No date set'}</span>
+                                                        <div className="flex flex-wrap justify-between gap-2 text-[8px] font-bold text-slate-300 uppercase tracking-widest pt-2 border-t border-slate-50">
+                                                            <span className="flex items-center gap-1"><Icon name="calendar" size={10} /> Start: {vial.injectionStartDate || 'Today'}</span>
+                                                            <span className="flex items-center gap-1"><Icon name="calendar-check" size={10} /> Exp: {vial.expDate || 'No exp date'}</span>
                                                             <span>{vial.createdAt ? 'Synced' : 'Saving...'}</span>
                                                         </div>
                                                     </>
