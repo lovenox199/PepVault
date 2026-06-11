@@ -155,10 +155,98 @@
             return labels[freq] || 'Daily';
         };
 
+
+        // Full-name peptide suggestions pulled from pages 1-3 of the uploaded LNpepetides list.
+        // These are name-only helpers for inventory labeling; amounts/dosing stay manual.
+        const PEPTIDE_NAME_SUGGESTIONS = [
+            'Semaglutide',
+            'Tirzepatide',
+            'Retatrutide',
+            'BPC 157',
+            'TB500',
+            'BPC 5mg + TB 5mg',
+            'BPC 10mg + TB 10mg',
+            'SS-31',
+            'CJC-1295 NO DAC',
+            'CJC-1295 NO DAC 5mg + Ipamorelin 5mg',
+            'CJC-1295 with DAC',
+            'AOD9604',
+            'IGF-1LR3',
+            'MOTS-c',
+            'MT-1',
+            'MT-2 (Melanotan 2 Acetate)',
+            'Epithalon',
+            'GHRP-2 Acetate',
+            'GHRP-6 Acetate',
+            'PT-141',
+            'Selank',
+            'Semax',
+            'Tesamorelin',
+            'Sermorelin Acetate',
+            'Thymosin Alpha-1',
+            'Ipamorelin',
+            'Survodutide',
+            'Mazdutide',
+            'Cagrilintide',
+            'NAD+',
+            'GHK-CU',
+            'GLOW — BPC157 10mg + GHK-CU 50mg + TB500 10mg',
+            'KLOW80 — BPC157 10mg + GHK-CU 50mg + TB500 10mg + KPV10mg',
+            'KissPeptin-10',
+            'DISP',
+            'Oxytocin Acetate',
+            'Adipotide',
+            'PEG MGF',
+            'HCG',
+            'Thymalin',
+            'LL37',
+            'Glutathione (Branded)',
+            '5-amino-1mq',
+            'Botulinum toxin',
+            'HMG',
+            'Snap-8',
+            'Ara-290',
+            'Cagrilintide 5mg + Semaglutide 5mg',
+            'ACE-031',
+            'KPV',
+            'AICAR',
+            'Pinealon',
+            'VIP',
+            'Cerebrolysin (Branded)',
+            'Cortagen',
+            'PE-22-28',
+            'Vilon',
+            'Testagen'
+        ];
+
+        const BUILT_IN_SAVED_SETUPS = [
+            {
+                id: 'builtin-klow80',
+                presetName: 'KLOW80 - 10 units',
+                name: 'KLOW80 — BPC157 10mg + GHK-CU 50mg + TB500 10mg + KPV10mg',
+                mg: 80,
+                bac: 2.5,
+                targetDose: 3200,
+                frequency: 'daily',
+                isBuiltIn: true
+            },
+            {
+                id: 'builtin-tesamorelin-20',
+                presetName: 'Tesamorelin 20mg - 2mg dose',
+                name: 'Tesamorelin',
+                mg: 20,
+                bac: 2,
+                targetDose: 2000,
+                frequency: 'daily',
+                isBuiltIn: true
+            }
+        ];
+
         function App() {
             const [user, setUser] = useState(null);
             const [loading, setLoading] = useState(true);
             const [vials, setVials] = useState([]);
+            const [savedSetups, setSavedSetups] = useState([]);
             const [activeTab, setActiveTab] = useState('inventory');
             const [authMode, setAuthMode] = useState('login'); // 'login' | 'signup' | 'forgot'
             const [email, setEmail] = useState('');
@@ -190,15 +278,29 @@
                     .then(doc => { if (doc.exists) setVaultName(doc.data().vaultName || 'PepVault'); });
 
                 // Load Vials
-                const unsubscribe = db.collection('users').doc(user.uid).collection('vials')
+                const unsubscribeVials = db.collection('users').doc(user.uid).collection('vials')
                     .orderBy('createdAt', 'desc')
                     .onSnapshot(snapshot => {
                         const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
                         setVials(data);
                     }, error => {
-                        console.error("Firestore Error:", error);
+                        console.error("Firestore Vials Error:", error);
                     });
-                return unsubscribe;
+
+                // Load User-Saved Setups
+                const unsubscribeSetups = db.collection('users').doc(user.uid).collection('savedSetups')
+                    .orderBy('createdAt', 'desc')
+                    .onSnapshot(snapshot => {
+                        const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                        setSavedSetups(data);
+                    }, error => {
+                        console.error("Firestore Setups Error:", error);
+                    });
+
+                return () => {
+                    unsubscribeVials();
+                    unsubscribeSetups();
+                };
             }, [user]);
 
             const handleAuth = async (e) => {
@@ -231,6 +333,61 @@
                 });
                 setFormData({ name: '', mg: '', bac: '', expDate: '', injectionStartDate: getTodayInputDate(), targetDose: 250, frequency: 'daily' });
                 setActiveTab('inventory');
+            };
+
+            const allSavedSetups = [...BUILT_IN_SAVED_SETUPS, ...savedSetups];
+
+            const applySavedSetup = (setup) => {
+                setFormData({
+                    ...formData,
+                    name: setup.name || '',
+                    mg: setup.mg ?? '',
+                    bac: setup.bac ?? '',
+                    targetDose: setup.targetDose ?? 250,
+                    frequency: setup.frequency || 'daily',
+                    injectionStartDate: getTodayInputDate()
+                });
+            };
+
+            const saveVialAsSetup = async (vial) => {
+                const presetName = prompt('Name this saved setup:', vial.name ? `${vial.name} setup` : 'Saved setup');
+                if (!presetName) return;
+
+                await db.collection('users').doc(user.uid).collection('savedSetups').add({
+                    presetName: presetName.trim(),
+                    name: vial.name || '',
+                    mg: parseFloat(vial.mg) || 0,
+                    bac: parseFloat(vial.bac) || 0,
+                    targetDose: parseFloat(vial.targetDose) || 0,
+                    frequency: vial.frequency || 'daily',
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            };
+
+            const saveCurrentFormAsSetup = async () => {
+                if (!formData.name || !formData.mg) {
+                    alert('Please enter at least a compound name and total mg before saving a setup.');
+                    return;
+                }
+                const presetName = prompt('Name this saved setup:', `${formData.name} setup`);
+                if (!presetName) return;
+
+                await db.collection('users').doc(user.uid).collection('savedSetups').add({
+                    presetName: presetName.trim(),
+                    name: formData.name || '',
+                    mg: parseFloat(formData.mg) || 0,
+                    bac: parseFloat(formData.bac) || 0,
+                    targetDose: parseFloat(formData.targetDose) || 0,
+                    frequency: formData.frequency || 'daily',
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            };
+
+            const deleteSavedSetup = async (setup) => {
+                if (setup.isBuiltIn) return;
+                if (confirm(`Delete saved setup "${setup.presetName}"?`)) {
+                    await db.collection('users').doc(user.uid).collection('savedSetups').doc(setup.id).delete();
+                }
             };
 
             const startEditing = (vial) => {
@@ -391,9 +548,78 @@
                         ) : activeTab === 'add' ? (
                             <form onSubmit={handleAddVial} className="bg-white p-8 rounded-[3rem] shadow-xl space-y-6 animate-fade-in">
                                 <h2 className="text-2xl font-black uppercase tracking-tighter text-slate-800">New Entry</h2>
+
+                                <div className="bg-slate-50 border border-slate-100 rounded-[2rem] p-4 space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <div className="bg-white p-1.5 rounded-lg shadow-sm"><Icon name="star" size={14} className="text-blue-600" /></div>
+                                            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Saved Setups</p>
+                                        </div>
+                                        <button type="button" onClick={saveCurrentFormAsSetup} className="text-[9px] font-black text-blue-600 uppercase tracking-widest bg-white px-3 py-2 rounded-xl border border-blue-100 active:scale-95 transition-transform">Save Current</button>
+                                    </div>
+                                    <div className="flex gap-2 overflow-x-auto pb-1">
+                                        {allSavedSetups.map(setup => (
+                                            <div key={setup.id} className="shrink-0 bg-white border border-slate-100 rounded-2xl p-3 min-w-[190px] shadow-sm">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => applySavedSetup(setup)}
+                                                    className="w-full text-left active:scale-95 transition-transform"
+                                                >
+                                                    <p className="text-[10px] font-black text-slate-800 uppercase tracking-wider leading-tight">{setup.presetName}</p>
+                                                    <p className="text-[9px] font-bold text-slate-400 mt-1 line-clamp-2">{setup.name}</p>
+                                                    <div className="flex flex-wrap gap-1 mt-2">
+                                                        <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded-lg text-[8px] font-black">{setup.mg}mg</span>
+                                                        <span className="bg-emerald-50 text-emerald-700 px-2 py-1 rounded-lg text-[8px] font-black">{setup.bac}mL</span>
+                                                        <span className="bg-slate-100 text-slate-600 px-2 py-1 rounded-lg text-[8px] font-black">{setup.targetDose}mcg</span>
+                                                    </div>
+                                                </button>
+                                                {!setup.isBuiltIn && (
+                                                    <button type="button" onClick={() => deleteSavedSetup(setup)} className="mt-2 text-[8px] font-black text-red-400 uppercase tracking-widest">Delete</button>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <p className="text-[9px] text-slate-400 font-bold leading-relaxed px-1">Setups fill saved name, vial amount, BAC water, target dose, and frequency. Verify each entry before saving.</p>
+                                </div>
+
                                 <div className="space-y-1">
                                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-2">Compound Name</label>
-                                    <input type="text" placeholder="e.g. BPC-157" className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none border-2 border-transparent focus:border-blue-500" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} required />
+                                    <input 
+                                        type="text" 
+                                        list="peptide-name-suggestions"
+                                        placeholder="Start typing peptide name..." 
+                                        className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none border-2 border-transparent focus:border-blue-500" 
+                                        value={formData.name} 
+                                        onChange={e => setFormData({...formData, name: e.target.value})} 
+                                        required 
+                                    />
+                                    <datalist id="peptide-name-suggestions">
+                                        {PEPTIDE_NAME_SUGGESTIONS.map(name => <option key={name} value={name} />)}
+                                    </datalist>
+                                    <div className="mt-3 space-y-2">
+                                        <div className="flex items-center justify-between px-1">
+                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Suggestions</p>
+                                            <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">Name only</p>
+                                        </div>
+                                        <div className="flex gap-2 overflow-x-auto pb-1">
+                                            {PEPTIDE_NAME_SUGGESTIONS
+                                                .filter(name => !formData.name || name.toLowerCase().includes(formData.name.toLowerCase()))
+                                                .slice(0, 14)
+                                                .map(name => (
+                                                    <button 
+                                                        type="button" 
+                                                        key={name}
+                                                        onClick={() => setFormData({...formData, name})}
+                                                        className="shrink-0 px-3 py-2 bg-blue-50 text-blue-700 border border-blue-100 rounded-xl text-[10px] font-black uppercase tracking-wider active:scale-95 transition-transform"
+                                                    >
+                                                        {name}
+                                                    </button>
+                                                ))}
+                                        </div>
+                                        <p className="text-[9px] text-slate-400 font-bold px-1 leading-relaxed">
+                                            Pulled from pages 1–3 of the price list. Suggestions fill the name only; vial amount, BAC water, dose, and schedule stay manual.
+                                        </p>
+                                    </div>
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-1">
@@ -474,7 +700,14 @@
                                                         <div className="space-y-3">
                                                             <div className="space-y-1">
                                                                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider ml-1">Compound Name</label>
-                                                                <input type="text" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-700" value={editFormData.name} onChange={e => setEditFormData({...editFormData, name: e.target.value})} placeholder="Name" />
+                                                                <input 
+                                                                    type="text" 
+                                                                    list="peptide-name-suggestions"
+                                                                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-700" 
+                                                                    value={editFormData.name} 
+                                                                    onChange={e => setEditFormData({...editFormData, name: e.target.value})} 
+                                                                    placeholder="Name" 
+                                                                />
                                                             </div>
                                                             <div className="grid grid-cols-2 gap-3">
                                                                 <div className="space-y-1">
@@ -522,6 +755,7 @@
                                                                 </div>
                                                             </div>
                                                             <div className="flex gap-1">
+                                                                <button onClick={() => saveVialAsSetup(vial)} title="Save as setup" className="text-slate-300 hover:text-amber-500 p-2 transition-colors"><Icon name="star" size={18} /></button>
                                                                 <button onClick={() => startEditing(vial)} className="text-slate-300 hover:text-blue-500 p-2 transition-colors"><Icon name="pencil" size={18} /></button>
                                                                 <button onClick={() => deleteVial(vial.id)} className="text-slate-300 hover:text-red-500 p-2 transition-colors"><Icon name="trash-2" size={18} /></button>
                                                             </div>
@@ -605,7 +839,6 @@
 
                                                         <div className="flex flex-wrap justify-between gap-2 text-[8px] font-bold text-slate-300 uppercase tracking-widest pt-2 border-t border-slate-50">
                                                             <span className="flex items-center gap-1"><Icon name="calendar" size={10} /> Start: {vial.injectionStartDate || 'Today'}</span>
-                                                            <span className="flex items-center gap-1"><Icon name="calendar-check" size={10} /> Exp: {vial.expDate || 'No exp date'}</span>
                                                             <span>{vial.createdAt ? 'Synced' : 'Saving...'}</span>
                                                         </div>
                                                     </>
