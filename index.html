@@ -392,6 +392,52 @@
                 }
             };
 
+
+            const startSuggestionDrag = (e) => {
+                const scroller = suggestionScrollerRef.current;
+                if (!scroller) return;
+                suggestionDragRef.current = {
+                    isDown: true,
+                    startX: e.pageX - scroller.offsetLeft,
+                    scrollLeft: scroller.scrollLeft,
+                    hasMoved: false
+                };
+                scroller.classList.add('cursor-grabbing');
+            };
+
+            const moveSuggestionDrag = (e) => {
+                const scroller = suggestionScrollerRef.current;
+                const drag = suggestionDragRef.current;
+                if (!scroller || !drag.isDown) return;
+
+                const x = e.pageX - scroller.offsetLeft;
+                const walk = x - drag.startX;
+
+                if (Math.abs(walk) > 5) {
+                    drag.hasMoved = true;
+                }
+
+                scroller.scrollLeft = drag.scrollLeft - walk;
+            };
+
+            const stopSuggestionDrag = () => {
+                const scroller = suggestionScrollerRef.current;
+                if (scroller) scroller.classList.remove('cursor-grabbing');
+                suggestionDragRef.current.isDown = false;
+            };
+
+            const chooseSuggestion = (e, name) => {
+                if (suggestionDragRef.current.hasMoved) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setTimeout(() => {
+                        suggestionDragRef.current.hasMoved = false;
+                    }, 0);
+                    return;
+                }
+                setFormData({...formData, name});
+            };
+
             const startEditing = (vial) => {
                 setEditingVialId(vial.id);
                 setEditFormData({
