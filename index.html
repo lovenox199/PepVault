@@ -513,7 +513,7 @@
             );
 
             return (
-                <div className="min-h-screen pb-32 animate-fade-in">
+                <div className="min-h-screen pb-48 animate-fade-in">
                     <header className="bg-white border-b border-slate-200 sticky top-0 z-20 px-6 py-5 flex justify-between items-center shadow-sm">
                         <div className="flex items-center gap-3">
                             <div className="bg-blue-600 p-2 rounded-xl shadow-lg shadow-blue-100"><Icon name="flask-conical" size={20} className="text-white" /></div>
@@ -557,9 +557,9 @@
                                         </div>
                                         <button type="button" onClick={saveCurrentFormAsSetup} className="text-[9px] font-black text-blue-600 uppercase tracking-widest bg-white px-3 py-2 rounded-xl border border-blue-100 active:scale-95 transition-transform">Save Current</button>
                                     </div>
-                                    <div className="flex gap-2 overflow-x-auto pb-1">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-72 overflow-y-auto pr-1 pb-1 overscroll-contain">
                                         {allSavedSetups.map(setup => (
-                                            <div key={setup.id} className="shrink-0 bg-white border border-slate-100 rounded-2xl p-3 min-w-[190px] shadow-sm">
+                                            <div key={setup.id} className="bg-white border border-slate-100 rounded-2xl p-3 shadow-sm">
                                                 <button
                                                     type="button"
                                                     onClick={() => applySavedSetup(setup)}
@@ -579,7 +579,7 @@
                                             </div>
                                         ))}
                                     </div>
-                                    <p className="text-[9px] text-slate-400 font-bold leading-relaxed px-1">Setups fill saved name, vial amount, BAC water, target dose, and frequency. Verify each entry before saving.</p>
+                                    <p className="text-[9px] text-slate-400 font-bold leading-relaxed px-1">Scroll this list vertically. Setups fill saved name, vial amount, BAC water, target dose, and frequency. Verify each entry before saving.</p>
                                 </div>
 
                                 <div className="space-y-1">
