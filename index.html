@@ -39,6 +39,18 @@
         
         /* Hide scrollbars */
         ::-webkit-scrollbar { display: none; }
+
+        /* Smooth horizontal drag scrolling */
+        .drag-scroll {
+            -webkit-overflow-scrolling: touch;
+            touch-action: pan-x;
+            scroll-behavior: smooth;
+            user-select: none;
+        }
+        .drag-scroll.dragging {
+            scroll-behavior: auto;
+            cursor: grabbing;
+        }
     </style>
 </head>
 <body class="bg-slate-50">
@@ -396,13 +408,18 @@
             const startSuggestionDrag = (e) => {
                 const scroller = suggestionScrollerRef.current;
                 if (!scroller) return;
+
                 suggestionDragRef.current = {
                     isDown: true,
-                    startX: e.pageX - scroller.offsetLeft,
+                    startX: e.clientX,
                     scrollLeft: scroller.scrollLeft,
                     hasMoved: false
                 };
-                scroller.classList.add('cursor-grabbing');
+
+                scroller.classList.add('dragging');
+                if (e.pointerId !== undefined && scroller.setPointerCapture) {
+                    scroller.setPointerCapture(e.pointerId);
+                }
             };
 
             const moveSuggestionDrag = (e) => {
@@ -410,19 +427,23 @@
                 const drag = suggestionDragRef.current;
                 if (!scroller || !drag.isDown) return;
 
-                const x = e.pageX - scroller.offsetLeft;
-                const walk = x - drag.startX;
-
-                if (Math.abs(walk) > 5) {
+                const walk = e.clientX - drag.startX;
+                if (Math.abs(walk) > 4) {
                     drag.hasMoved = true;
+                    e.preventDefault();
                 }
 
                 scroller.scrollLeft = drag.scrollLeft - walk;
             };
 
-            const stopSuggestionDrag = () => {
+            const stopSuggestionDrag = (e) => {
                 const scroller = suggestionScrollerRef.current;
-                if (scroller) scroller.classList.remove('cursor-grabbing');
+                if (scroller) {
+                    scroller.classList.remove('dragging');
+                    if (e?.pointerId !== undefined && scroller.releasePointerCapture) {
+                        try { scroller.releasePointerCapture(e.pointerId); } catch (_) {}
+                    }
+                }
                 suggestionDragRef.current.isDown = false;
             };
 
@@ -651,11 +672,12 @@
                                         </div>
                                         <div 
                                             ref={suggestionScrollerRef}
-                                            onMouseDown={startSuggestionDrag}
-                                            onMouseMove={moveSuggestionDrag}
-                                            onMouseUp={stopSuggestionDrag}
-                                            onMouseLeave={stopSuggestionDrag}
-                                            className="flex gap-2 overflow-x-auto pb-2 cursor-grab select-none overscroll-x-contain scroll-smooth"
+                                            onPointerDown={startSuggestionDrag}
+                                            onPointerMove={moveSuggestionDrag}
+                                            onPointerUp={stopSuggestionDrag}
+                                            onPointerCancel={stopSuggestionDrag}
+                                            onPointerLeave={stopSuggestionDrag}
+                                            className="drag-scroll flex gap-2 overflow-x-auto pb-2 cursor-grab overscroll-x-contain"
                                         >
                                             {PEPTIDE_NAME_SUGGESTIONS
                                                 .filter(name => !formData.name || name.toLowerCase().includes(formData.name.toLowerCase()))
