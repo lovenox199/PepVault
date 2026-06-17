@@ -14,17 +14,55 @@
     <link href="https://fonts.googleapis.com/css2?family=Shadows+Into+Light+Two&family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
     
     <!-- React & Babel for Browser Rendering -->
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
     
     <!-- Lucide Icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
     
     <!-- Firebase Compat -->
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+
+
+    <!-- PepVault crash reporter: shows errors instead of a blank page -->
+    <script>
+        (function () {
+            function showPepVaultFatal(message, details) {
+                var render = function () {
+                    var root = document.getElementById('root') || document.body;
+                    if (!root) return;
+                    root.innerHTML = '' +
+                        '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f8fafc;padding:24px;font-family:Inter,Arial,sans-serif;">' +
+                        '<div style="max-width:720px;width:100%;background:white;border:1px solid #e2e8f0;border-radius:32px;box-shadow:0 20px 45px rgba(15,23,42,.12);padding:28px;">' +
+                        '<div style="display:inline-flex;background:#fee2e2;color:#dc2626;border-radius:16px;padding:10px 14px;font-weight:900;font-size:12px;letter-spacing:.12em;text-transform:uppercase;">PepVault could not start</div>' +
+                        '<h1 style="font-size:28px;line-height:1.1;margin:18px 0 8px;color:#0f172a;font-weight:900;">This is the error that was causing the blank page</h1>' +
+                        '<p style="color:#475569;font-weight:700;line-height:1.5;margin:0 0 16px;">Copy this message and send it to ChatGPT so it can be fixed precisely.</p>' +
+                        '<pre style="white-space:pre-wrap;word-break:break-word;background:#0f172a;color:#e2e8f0;border-radius:18px;padding:16px;font-size:12px;line-height:1.5;max-height:320px;overflow:auto;">' +
+                        String(message || 'Unknown error').replace(/[&<>]/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]); }) +
+                        (details ? '\n\n' + String(details).replace(/[&<>]/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]); }) : '') +
+                        '</pre>' +
+                        '</div></div>';
+                };
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', render, { once: true });
+                } else {
+                    render();
+                }
+            }
+            window.showPepVaultFatal = showPepVaultFatal;
+            window.addEventListener('error', function (event) {
+                showPepVaultFatal(event.message, event.filename + ':' + event.lineno + ':' + event.colno + '\n' + (event.error && event.error.stack ? event.error.stack : ''));
+            });
+            window.addEventListener('unhandledrejection', function (event) {
+                var reason = event.reason || {};
+                showPepVaultFatal(reason.message || 'Unhandled promise rejection', reason.stack || JSON.stringify(reason));
+            });
+        })();
+    </script>
 
     <style>
         body { font-family: 'Inter', sans-serif; }
@@ -54,9 +92,25 @@
     </style>
 </head>
 <body class="bg-slate-50">
-    <div id="root"></div>
+    <div id="root"><div style="min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:Inter,Arial,sans-serif;color:#64748b;font-weight:800;">Loading PepVault...</div></div>
 
-    <script type="text/babel">
+
+    <script>
+        window.addEventListener('load', function () {
+            setTimeout(function () {
+                var missing = [];
+                if (!window.React) missing.push('React');
+                if (!window.ReactDOM) missing.push('ReactDOM');
+                if (!window.Babel) missing.push('Babel');
+                if (!window.firebase) missing.push('Firebase');
+                if (missing.length && window.showPepVaultFatal) {
+                    window.showPepVaultFatal('Required external library did not load: ' + missing.join(', '), 'This often happens when a CDN is blocked, the internet connection blocks scripts, or the host has a Content Security Policy blocking unpkg.com / gstatic.com.');
+                }
+            }, 1500);
+        });
+    </script>
+
+    <script type="text/babel" data-presets="env,react">
         const { useState, useEffect, useRef } = React;
 
         // --- FIREBASE CONFIGURATION ---
@@ -68,6 +122,10 @@
             messagingSenderId: "400542112989",
             appId: "1:400542112989:web:43ac76ba4960530cfd0f34"
         };
+
+        if (!window.firebase) {
+            throw new Error('Firebase SDK did not load. Check whether gstatic.com Firebase scripts are blocked by your browser, host, or network.');
+        }
 
         // Initialize Firebase
         if (!firebase.apps.length) {
@@ -540,6 +598,10 @@
                 setActiveTab('inventory');
             };
 
+            const filteredVials = vials.filter(vial =>
+                String(vial?.name || '').toLowerCase().includes(String(searchTerm || '').toLowerCase())
+            );
+
             if (loading) return (
                 <div className="min-h-screen flex items-center justify-center">
                     <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
@@ -780,13 +842,13 @@
                                     <input type="text" placeholder="Search Vault..." className="w-full pl-14 pr-8 py-5 bg-white border border-slate-200 rounded-[2.5rem] shadow-sm outline-none focus:ring-4 focus:ring-blue-50 font-bold transition-all" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
                                 </div>
 
-                                {vials.filter(v => (v.name || '').toLowerCase().includes(searchTerm.toLowerCase())).length === 0 ? (
+                                {filteredVials.length === 0 ? (
                                     <div className="py-20 text-center space-y-4">
                                         <Icon name="package" size={48} className="mx-auto text-slate-200" />
                                         <p className="text-slate-400 font-bold uppercase tracking-widest text-[10px]">No research materials found</p>
                                     </div>
                                 ) : (
-                                    vials.filter(v => (v.name || '').toLowerCase().includes(searchTerm.toLowerCase())).map(vial => {
+                                    filteredVials.map(vial => {
                                         const isEditing = editingVialId === vial.id;
                                         
                                         // Dynamic Calendar Simulation (Safe from inside loop)
@@ -981,8 +1043,16 @@
             );
         }
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<ErrorBoundary><App /></ErrorBoundary>);
+        try {
+            const root = ReactDOM.createRoot(document.getElementById('root'));
+            root.render(<ErrorBoundary><App /></ErrorBoundary>);
+        } catch (err) {
+            if (window.showPepVaultFatal) {
+                window.showPepVaultFatal(err.message, err.stack);
+            } else {
+                throw err;
+            }
+        }
     </script>
 </body>
 </html>
